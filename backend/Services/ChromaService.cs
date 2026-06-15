@@ -18,25 +18,41 @@ public class ChromaService : IChromaService
         _baseUrl = config["Chroma:BaseUrl"] ?? "http://localhost:8000";
     }
 
-    // Obtiene o crea la colección en ChromaDB
     private async Task<string> GetOrCreateCollectionAsync()
     {
         if (_collectionId != null) return _collectionId;
 
-        // Intentar obtener colección existente
-        var getRes = await _http.GetAsync($"{_baseUrl}/api/v1/collections/{CollectionName}");
-        if (getRes.IsSuccessStatusCode)
+        // ChromaDB 1.x: listar colecciones y buscar por nombre
+        var listRes = await _http.GetAsync($"{_baseUrl}/api/v1/collections");
+        if (listRes.IsSuccessStatusCode)
         {
-            using var getDoc = JsonDocument.Parse(await getRes.Content.ReadAsStringAsync());
-            _collectionId = getDoc.RootElement.GetProperty("id").GetString()!;
-            return _collectionId;
+            var listJson = await listRes.Content.ReadAsStringAsync();
+            using var listDoc = JsonDocument.Parse(listJson);
+            var root = listDoc.RootElement;
+
+            var collections = root.ValueKind == JsonValueKind.Array
+                ? root
+                : root.TryGetProperty("collections", out var c) ? c : default;
+
+            if (collections.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var col in collections.EnumerateArray())
+                {
+                    if (col.TryGetProperty("name", out var nameEl) &&
+                        nameEl.GetString() == CollectionName)
+                    {
+                        _collectionId = col.GetProperty("id").GetString()!;
+                        return _collectionId;
+                    }
+                }
+            }
         }
 
-        // Crear colección nueva con metadata de distancia coseno
+        // No existe — crear colección nueva
         var body = new
         {
             name = CollectionName,
-            metadata = new { @__hnsw_space = "cosine" }
+            metadata = new Dictionary<string, string> { ["hnsw:space"] = "cosine" }
         };
         var createRes = await _http.PostAsync(
             $"{_baseUrl}/api/v1/collections",
@@ -88,14 +104,11 @@ public class ChromaService : IChromaService
 
         using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
 
-        // ChromaDB devuelve documents como array de arrays
-        var documents = doc.RootElement
+        return doc.RootElement
             .GetProperty("documents")[0]
             .EnumerateArray()
             .Select(d => d.GetString() ?? "")
             .Where(d => !string.IsNullOrEmpty(d))
             .ToList();
-
-        return documents;
     }
 }
