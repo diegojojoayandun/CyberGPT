@@ -1,0 +1,31 @@
+# Documentos y modelos (no subir a Git)
+knowledge/
+*.pdf
+*.gguf
+
+# .NET
+backend/bin/
+backend/obj/
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+*.user
+.vs/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Python / ChromaDB
+__pycache__/
+*.pyc
+chroma_db/
+.venv/
+chromadb_data/
+
+# Entorno
+.env
+.env.local
+*.key
+*.pem

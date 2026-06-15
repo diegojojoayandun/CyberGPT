@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-cyber-dark text-gray-100 font-mono;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { @apply bg-cyber-dark; }
+::-webkit-scrollbar-thumb { @apply bg-cyber-border rounded-full; }
