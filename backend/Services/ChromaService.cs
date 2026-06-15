@@ -9,6 +9,8 @@ public class ChromaService : IChromaService
     private readonly IEmbeddingService _embedding;
     private readonly string _baseUrl;
     private const string CollectionName = "cybergpt";
+    private const string Tenant = "default_tenant";
+    private const string Database = "default_database";
     private string? _collectionId;
 
     public ChromaService(IConfiguration config, IEmbeddingService embedding)
@@ -18,17 +20,20 @@ public class ChromaService : IChromaService
         _baseUrl = config["Chroma:BaseUrl"] ?? "http://localhost:8000";
     }
 
+    private string V2(string path) =>
+        $"{_baseUrl}/api/v2/tenants/{Tenant}/databases/{Database}/{path}";
+
     private async Task<string> GetOrCreateCollectionAsync()
     {
         if (_collectionId != null) return _collectionId;
 
-        // ChromaDB 1.x: listar colecciones y buscar por nombre
-        var listRes = await _http.GetAsync($"{_baseUrl}/api/v1/collections");
+        // Buscar colección existente
+        var listRes = await _http.GetAsync(V2("collections"));
         if (listRes.IsSuccessStatusCode)
         {
-            var listJson = await listRes.Content.ReadAsStringAsync();
-            using var listDoc = JsonDocument.Parse(listJson);
-            var root = listDoc.RootElement;
+            var json = await listRes.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
 
             var collections = root.ValueKind == JsonValueKind.Array
                 ? root
@@ -48,14 +53,15 @@ public class ChromaService : IChromaService
             }
         }
 
-        // No existe — crear colección nueva
+        // Crear colección nueva
         var body = new
         {
             name = CollectionName,
             metadata = new Dictionary<string, string> { ["hnsw:space"] = "cosine" }
         };
+
         var createRes = await _http.PostAsync(
-            $"{_baseUrl}/api/v1/collections",
+            V2("collections"),
             new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
 
         createRes.EnsureSuccessStatusCode();
@@ -78,7 +84,7 @@ public class ChromaService : IChromaService
         };
 
         var res = await _http.PostAsync(
-            $"{_baseUrl}/api/v1/collections/{collectionId}/upsert",
+            V2($"collections/{collectionId}/upsert"),
             new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
 
         res.EnsureSuccessStatusCode();
@@ -97,7 +103,7 @@ public class ChromaService : IChromaService
         };
 
         var res = await _http.PostAsync(
-            $"{_baseUrl}/api/v1/collections/{collectionId}/query",
+            V2($"collections/{collectionId}/query"),
             new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
 
         if (!res.IsSuccessStatusCode) return new List<string>();
