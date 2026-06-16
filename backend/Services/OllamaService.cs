@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using CyberGPT.API.Models;
 
 namespace CyberGPT.API.Services;
 
@@ -22,26 +23,28 @@ public class OllamaService : IOllamaService
         _http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
     }
 
-    public async Task<string> GenerateAsync(string prompt, string context = "")
+    public async Task<string> GenerateAsync(string prompt, string context = "", List<ChatTurn>? history = null)
     {
-        var fullPrompt = string.IsNullOrEmpty(context)
+        var messages = new List<object> { new { role = "system", content = SystemPrompt } };
+
+        if (history != null)
+            foreach (var turn in history)
+                messages.Add(new { role = turn.Role, content = turn.Message });
+
+        var userContent = string.IsNullOrEmpty(context)
             ? prompt
             : $"Contexto RAG:\n{context}\n\nPregunta: {prompt}";
 
-        var body = new
-        {
-            model  = _model,
-            prompt = fullPrompt,
-            system = SystemPrompt,
-            stream = false
-        };
+        messages.Add(new { role = "user", content = userContent });
+
+        var body = new { model = _model, messages, stream = false };
 
         var res = await _http.PostAsync(
-            $"{_baseUrl}/api/generate",
+            $"{_baseUrl}/api/chat",
             new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
 
         res.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
-        return doc.RootElement.GetProperty("response").GetString() ?? "";
+        return doc.RootElement.GetProperty("message").GetProperty("content").GetString() ?? "";
     }
 }

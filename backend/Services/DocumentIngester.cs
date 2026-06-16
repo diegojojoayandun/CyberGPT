@@ -1,8 +1,10 @@
+using UglyToad.PdfPig;
+
 namespace CyberGPT.API.Services;
 
 public class DocumentIngester(IChromaService chroma, ILogger<DocumentIngester> logger)
 {
-    private static readonly string[] SupportedExtensions = [".txt", ".md", ".cs", ".json", ".yaml", ".yml"];
+    private static readonly string[] SupportedExtensions = [".txt", ".md", ".cs", ".json", ".yaml", ".yml", ".pdf"];
     private const int ChunkSize = 1000;   // caracteres por chunk
     private const int ChunkOverlap = 200; // solapamiento entre chunks
 
@@ -32,7 +34,7 @@ public class DocumentIngester(IChromaService chroma, ILogger<DocumentIngester> l
     {
         try
         {
-            var content = await File.ReadAllTextAsync(filePath);
+            var content = await ReadContentAsync(filePath);
             var category = Path.GetFileName(Path.GetDirectoryName(filePath)) ?? "general";
             var fileName = Path.GetFileName(filePath);
 
@@ -58,6 +60,18 @@ public class DocumentIngester(IChromaService chroma, ILogger<DocumentIngester> l
         {
             logger.LogError(ex, "Error indexando {File}", filePath);
         }
+    }
+
+    private static Task<string> ReadContentAsync(string filePath)
+    {
+        if (Path.GetExtension(filePath).ToLower() == ".pdf")
+        {
+            using var pdf = PdfDocument.Open(filePath);
+            var pages = pdf.GetPages()
+                .Select(p => string.Join(" ", p.GetWords().Select(w => w.Text)));
+            return Task.FromResult(string.Join("\n\n", pages));
+        }
+        return File.ReadAllTextAsync(filePath);
     }
 
     private static List<string> ChunkText(string text)

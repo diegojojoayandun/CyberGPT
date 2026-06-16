@@ -90,7 +90,7 @@ public class ChromaService : IChromaService
         res.EnsureSuccessStatusCode();
     }
 
-    public async Task<List<string>> QueryAsync(string query, int topK = 3)
+    public async Task<List<ChromaResult>> QueryAsync(string query, int topK = 3)
     {
         var collectionId = await GetOrCreateCollectionAsync();
         var embedding = await _embedding.GetEmbeddingAsync(query);
@@ -106,15 +106,30 @@ public class ChromaService : IChromaService
             V2($"collections/{collectionId}/query"),
             new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
 
-        if (!res.IsSuccessStatusCode) return new List<string>();
+        if (!res.IsSuccessStatusCode) return new List<ChromaResult>();
 
         using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
 
-        return doc.RootElement
-            .GetProperty("documents")[0]
-            .EnumerateArray()
-            .Select(d => d.GetString() ?? "")
-            .Where(d => !string.IsNullOrEmpty(d))
-            .ToList();
+        var documents = doc.RootElement.GetProperty("documents")[0];
+        var distances = doc.RootElement.TryGetProperty("distances", out var distsArr)
+            ? distsArr[0]
+            : default;
+
+        var results = new List<ChromaResult>();
+        var docEnum = documents.EnumerateArray();
+        var distList = distances.ValueKind == JsonValueKind.Array
+            ? distances.EnumerateArray().Select(x => x.GetSingle()).ToList()
+            : null;
+
+        int idx = 0;
+        foreach (var d in docEnum)
+        {
+            var text = d.GetString() ?? string.Empty;
+            var distance = distList != null && idx < distList.Count ? distList[idx] : 0f;
+            results.Add(new ChromaResult { Document = text, Distance = distance });
+            idx++;
+        }
+
+        return results;
     }
 }

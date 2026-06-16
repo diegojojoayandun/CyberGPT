@@ -1,6 +1,7 @@
 namespace CyberGPT.API.Services;
+
 public interface IChromaService
 {
     Task AddDocumentAsync(string id, string content, Dictionary<string, string> metadata);
-    Task<List<string>> QueryAsync(string query, int topK = 3);
+    Task<List<ChromaResult>> QueryAsync(string query, int topK = 3);
 }
