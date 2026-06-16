@@ -9,24 +9,25 @@ const QUICK_PROMPTS = [
 
 export default function Sidebar({ onSelect }) {
   return (
-    <aside className="w-64 bg-cyber-panel border-r border-cyber-border flex flex-col">
-      <div className="p-4 border-b border-cyber-border">
+    <aside className="glass-panel w-64 flex flex-col relative z-10">
+      <div className="p-5 border-b border-white/5">
         <div className="flex items-center gap-2">
-          <span className="text-cyber-accent text-lg font-bold">⚡ CyberGPT</span>
+          <span className="text-cyber-accent text-lg font-bold glow-text">⚡ CyberGPT</span>
         </div>
-        <p className="text-xs text-gray-500 mt-1">RAG · Ciberseguridad</p>
+        <p className="text-xs text-gray-500 mt-1 tracking-widest uppercase">RAG · Ciberseguridad</p>
       </div>
 
       <div className="p-4 flex-1 overflow-y-auto">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Preguntas rápidas</p>
+        <p className="text-xs text-gray-600 uppercase tracking-widest mb-3">Preguntas rápidas</p>
         <div className="flex flex-col gap-2">
           {QUICK_PROMPTS.map((p, i) => (
             <button
               key={i}
               onClick={() => onSelect(p)}
               className="text-left text-xs text-gray-400 hover:text-cyber-accent
-                         border border-cyber-border hover:border-cyber-accent/40
-                         rounded-lg px-3 py-2 transition-colors"
+                         glass rounded-lg px-3 py-2.5
+                         hover:border-cyber-accent/30 hover:bg-cyber-accent/5
+                         transition-all duration-200 hover:shadow-[0_0_12px_rgba(34,211,238,0.1)]"
             >
               {p}
             </button>
@@ -34,8 +35,8 @@ export default function Sidebar({ onSelect }) {
         </div>
       </div>
 
-      <div className="p-4 border-t border-cyber-border">
-        <p className="text-xs text-gray-600">MITRE · OWASP · AD · Malware</p>
+      <div className="p-4 border-t border-white/5">
+        <p className="text-xs text-gray-700 tracking-wider">MITRE · OWASP · AD · Malware</p>
       </div>
     </aside>
   )
