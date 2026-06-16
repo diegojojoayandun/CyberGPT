@@ -14,13 +14,12 @@ public class OllamaService : IOllamaService
         ? File.ReadAllText("Prompts/cybergpt.txt")
         : "Eres CyberGPT, especialista en ciberseguridad.";
 
-    public OllamaService(IConfiguration config)
+    public OllamaService(HttpClient http, IConfiguration config)
     {
         _baseUrl = config["Ollama:BaseUrl"] ?? "http://localhost:11434";
         _model   = config["Ollama:Model"]   ?? "qwen3:4b";
-
-        // Timeout de 10 minutos — el modelo puede tardar en CPU
-        _http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        http.Timeout = TimeSpan.FromMinutes(10);
+        _http = http;
     }
 
     public async Task<string> GenerateAsync(string prompt, string context = "", List<ChatTurn>? history = null)
