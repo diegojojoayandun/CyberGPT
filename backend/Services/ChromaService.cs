@@ -90,43 +90,61 @@ public class ChromaService : IChromaService
         res.EnsureSuccessStatusCode();
     }
 
-    public async Task<List<ChromaResult>> QueryAsync(string query, int topK = 3)
+    public async Task<List<ChromaResult>> QueryAsync(string query, int topK = 3, string? category = null)
     {
         var collectionId = await GetOrCreateCollectionAsync();
         var embedding = await _embedding.GetEmbeddingAsync(query);
 
-        var body = new
+        var bodyDict = new Dictionary<string, object>
         {
-            query_embeddings = new[] { embedding },
-            n_results = topK,
-            include = new[] { "documents", "metadatas", "distances" }
+            ["query_embeddings"] = new[] { embedding },
+            ["n_results"] = topK,
+            ["include"] = new[] { "documents", "metadatas", "distances" }
         };
+
+        if (category != null)
+            bodyDict["where"] = new Dictionary<string, object>
+            {
+                ["category"] = new Dictionary<string, string> { ["$eq"] = category }
+            };
 
         var res = await _http.PostAsync(
             V2($"collections/{collectionId}/query"),
-            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
+            new StringContent(JsonSerializer.Serialize(bodyDict), Encoding.UTF8, "application/json"));
 
-        if (!res.IsSuccessStatusCode) return new List<ChromaResult>();
+        if (!res.IsSuccessStatusCode) return [];
 
         using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
 
-        var documents = doc.RootElement.GetProperty("documents")[0];
-        var distances = doc.RootElement.TryGetProperty("distances", out var distsArr)
-            ? distsArr[0]
-            : default;
+        var docsEl  = root.GetProperty("documents")[0];
+        var idsEl   = root.TryGetProperty("ids",       out var idsOuter)  ? idsOuter[0]   : default;
+        var distsEl = root.TryGetProperty("distances", out var distsOuter) ? distsOuter[0] : default;
+        var metasEl = root.TryGetProperty("metadatas", out var metasOuter) ? metasOuter[0] : default;
+
+        var idsList   = idsEl.ValueKind   == JsonValueKind.Array ? idsEl.EnumerateArray().Select(x => x.GetString() ?? "").ToList()   : null;
+        var distList  = distsEl.ValueKind == JsonValueKind.Array ? distsEl.EnumerateArray().Select(x => x.GetSingle()).ToList()       : null;
 
         var results = new List<ChromaResult>();
-        var docEnum = documents.EnumerateArray();
-        var distList = distances.ValueKind == JsonValueKind.Array
-            ? distances.EnumerateArray().Select(x => x.GetSingle()).ToList()
-            : null;
-
         int idx = 0;
-        foreach (var d in docEnum)
+        foreach (var d in docsEl.EnumerateArray())
         {
-            var text = d.GetString() ?? string.Empty;
-            var distance = distList != null && idx < distList.Count ? distList[idx] : 0f;
-            results.Add(new ChromaResult { Document = text, Distance = distance });
+            var meta = new Dictionary<string, string>();
+            if (metasEl.ValueKind == JsonValueKind.Array)
+            {
+                var metaEl = metasEl.EnumerateArray().ElementAtOrDefault(idx);
+                if (metaEl.ValueKind == JsonValueKind.Object)
+                    foreach (var prop in metaEl.EnumerateObject())
+                        meta[prop.Name] = prop.Value.GetString() ?? "";
+            }
+
+            results.Add(new ChromaResult
+            {
+                DocId    = idsList  != null && idx < idsList.Count  ? idsList[idx]  : "",
+                Document = d.GetString() ?? "",
+                Distance = distList != null && idx < distList.Count ? distList[idx] : 0f,
+                Metadata = meta
+            });
             idx++;
         }
 

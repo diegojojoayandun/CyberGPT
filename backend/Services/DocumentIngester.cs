@@ -2,7 +2,7 @@ using UglyToad.PdfPig;
 
 namespace CyberGPT.API.Services;
 
-public class DocumentIngester(IChromaService chroma, ILogger<DocumentIngester> logger)
+public class DocumentIngester(IChromaService chroma, KeywordSearchService keyword, ILogger<DocumentIngester> logger)
 {
     private static readonly string[] SupportedExtensions = [".txt", ".md", ".cs", ".json", ".yaml", ".yml", ".pdf"];
     private const int ChunkSize = 1000;   // caracteres por chunk
@@ -54,6 +54,7 @@ public class DocumentIngester(IChromaService chroma, ILogger<DocumentIngester> l
                 };
 
                 await chroma.AddDocumentAsync(id, chunks[i], metadata);
+                await keyword.InsertAsync(id, chunks[i], fileName, category);
             }
         }
         catch (Exception ex)
