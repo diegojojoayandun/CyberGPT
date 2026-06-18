@@ -1,6 +1,6 @@
 namespace CyberGPT.API.Models;
 
-public record ChatRequest(string Message, string? SessionId = null, string? Category = null, string? Model = null);
+public record ChatRequest(string Message, string? SessionId = null, string? Category = null, string? Model = null, bool? EnableThinking = null);
 public record ChatResponse(string Reply, string SessionId, List<SourceChunk> Sources);
 public record DocumentUploadRequest(string Content, string FileName, string Category);
 

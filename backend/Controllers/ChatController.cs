@@ -53,7 +53,7 @@ public class ChatController(IRagService rag, IOllamaService ollama, SessionServi
 
         // Stream tokens
         var fullReply = new StringBuilder();
-        await foreach (var token in ollama.StreamAsync(req.Message, context, history, req.Model, ct))
+        await foreach (var token in ollama.StreamAsync(req.Message, context, history, req.Model, req.EnableThinking, ct))
         {
             fullReply.Append(token);
             await Response.WriteAsync($"data: {JsonSerializer.Serialize(new { token })}\n\n", ct);

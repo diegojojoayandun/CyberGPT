@@ -1,22 +1,48 @@
 using CyberGPT.API.Data;
 using CyberGPT.API.Services;
+using CyberGPT.API.Services.Tools;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddHttpClient();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
-// Servicios IA
-builder.Services.AddHttpClient<IOllamaService, OllamaService>();
-builder.Services.AddHttpClient<IEmbeddingService, EmbeddingService>();
+// Servicios IA — retry exponencial (3 intentos) + circuit breaker
+builder.Services.AddHttpClient<IOllamaService, OllamaService>()
+    .AddStandardResilienceHandler(o =>
+    {
+        o.Retry.MaxRetryAttempts = 2;
+        o.Retry.Delay = TimeSpan.FromSeconds(2);
+        o.TotalRequestTimeout.Timeout     = TimeSpan.FromMinutes(15);
+        o.AttemptTimeout.Timeout          = TimeSpan.FromMinutes(5);
+        o.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(11); // >= 2x AttemptTimeout
+    });
+builder.Services.AddHttpClient<IEmbeddingService, EmbeddingService>()
+    .AddStandardResilienceHandler(o =>
+    {
+        o.Retry.MaxRetryAttempts = 3;
+        o.Retry.Delay = TimeSpan.FromSeconds(1);
+    });
 
 // ChromaDB y RAG
 builder.Services.AddSingleton<IChromaService, ChromaService>();
 builder.Services.AddScoped<IRagService, RagService>();
 builder.Services.AddScoped<DocumentIngester>();
+
+// OSINT Agent
+builder.Services.AddTransient<IOsintTool, WhoisTool>();
+builder.Services.AddTransient<IOsintTool, DnsTool>();
+builder.Services.AddTransient<IOsintTool, CrtShTool>();
+builder.Services.AddTransient<IOsintTool, GeoIpTool>();
+builder.Services.AddTransient<IOsintTool, ShodanTool>();
+builder.Services.AddTransient<IOsintTool, VirusTotalTool>();
+builder.Services.AddTransient<IOsintTool, WhatsAppOsintTool>();
+builder.Services.AddSingleton<OsintToolRegistry>();
+builder.Services.AddScoped<OsintAgentService>();
 
 // Búsqueda híbrida (SQLite FTS5)
 builder.Services.AddSingleton<KeywordSearchService>();

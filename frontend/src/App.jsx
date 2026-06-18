@@ -4,6 +4,8 @@ import ChatInput from './components/ChatInput'
 import Sidebar from './components/Sidebar'
 import ModelPicker from './components/ModelPicker'
 import { streamMessage, getSessions, getSessionMessages, deleteSession } from './services/api'
+import HealthBadge from './components/HealthBadge'
+import OsintPanel from './components/OsintPanel'
 
 const WELCOME = {
   role: 'assistant',
@@ -18,7 +20,10 @@ export default function App() {
   const [sessions, setSessions] = useState([])
   const [category, setCategory] = useState(null)
   const [selectedModel, setSelectedModel] = useState(null)
+  const [enableThinking, setEnableThinking] = useState(false)
+  const [mode, setMode] = useState('chat')
   const bottomRef = useRef(null)
+  const abortRef = useRef(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -31,19 +36,17 @@ export default function App() {
   useEffect(() => { refreshSessions() }, [refreshSessions])
 
   const handleSend = async (text) => {
+    if (loading) return
     setMessages(prev => [...prev, { role: 'user', content: text, sources: [] }])
     setLoading(true)
-
-    // Add placeholder for streaming assistant message
-    const assistantIdx = (prev => prev.length)(messages) + 1
     setMessages(prev => [...prev, { role: 'assistant', content: '', sources: [], streaming: true }])
 
-    try {
-      let activeSessionId = sessionId
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
 
+    try {
       await streamMessage(text, sessionId, category, selectedModel, {
         onSources: (srcs, sid) => {
-          activeSessionId = sid
           setSessionId(sid)
           setMessages(prev => {
             const updated = [...prev]
@@ -67,21 +70,30 @@ export default function App() {
           })
           refreshSessions()
         }
-      })
-    } catch {
+      }, ctrl.signal, enableThinking)
+    } catch (e) {
       setMessages(prev => {
         const updated = [...prev]
-        updated[updated.length - 1] = {
-          role: 'assistant',
-          content: '⚠️ Error al conectar con el backend. Verifica que Ollama y la API estén corriendo.',
-          sources: [],
-          streaming: false
+        if (e.name === 'AbortError') {
+          updated[updated.length - 1] = { ...updated[updated.length - 1], streaming: false }
+        } else {
+          updated[updated.length - 1] = {
+            role: 'assistant',
+            content: '⚠️ Error al conectar con el backend. Verifica que Ollama y la API estén corriendo.',
+            sources: [],
+            streaming: false
+          }
         }
         return updated
       })
     } finally {
+      abortRef.current = null
       setLoading(false)
     }
+  }
+
+  const handleStop = () => {
+    abortRef.current?.abort()
   }
 
   const handleNewSession = () => {
@@ -118,14 +130,20 @@ export default function App() {
         onNewSession={handleNewSession}
         onLoadSession={handleLoadSession}
         onDeleteSession={handleDeleteSession}
+        loading={loading}
+        mode={mode}
+        onModeChange={setMode}
       />
 
       <main className="flex-1 flex flex-col relative z-10 min-w-0">
         <header className="glass px-6 py-3 flex items-center justify-between">
           <span className="text-xs text-gray-500">
-            {sessionId ? `Sesión: ${sessionId.slice(0, 8)}…` : 'Nueva sesión'}
+            {mode === 'osint'
+              ? 'OSINT Agent'
+              : sessionId ? `Sesión: ${sessionId.slice(0, 8)}…` : 'Nueva sesión'}
           </span>
           <div className="flex items-center gap-3">
+            <HealthBadge />
             <ModelPicker selectedModel={selectedModel} onSelect={setSelectedModel} />
             <span className={`text-xs px-3 py-1 rounded-full transition-all ${
               loading
@@ -137,14 +155,27 @@ export default function App() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-1">
-          {messages.map((m, i) => (
-            <ChatMessage key={i} role={m.role} content={m.content} sources={m.sources} streaming={m.streaming} />
-          ))}
-          <div ref={bottomRef} />
-        </div>
+        {mode === 'osint' ? (
+          <OsintPanel />
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-1">
+              {messages.map((m, i) => (
+                <ChatMessage key={i} role={m.role} content={m.content} sources={m.sources} streaming={m.streaming} />
+              ))}
+              <div ref={bottomRef} />
+            </div>
 
-        <ChatInput onSend={handleSend} disabled={loading} onCategoryChange={setCategory} />
+            <ChatInput
+              onSend={handleSend}
+              onStop={handleStop}
+              disabled={loading}
+              onCategoryChange={setCategory}
+              enableThinking={enableThinking}
+              onToggleThinking={() => setEnableThinking(v => !v)}
+            />
+          </>
+        )}
       </main>
     </div>
   )

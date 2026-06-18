@@ -1,210 +1,110 @@
 # CyberGPT
 
-Plataforma RAG de ciberseguridad construida con **.NET 8**, **React + Vite + Tailwind**, **Ollama** y **ChromaDB**.
-
-Consulta documentación técnica (MITRE ATT&CK, OWASP, Active Directory, Malware, Windows Internals) mediante búsqueda híbrida y generación aumentada por recuperación (RAG) 100 % local.
+Plataforma de ciberseguridad con RAG local y agente OSINT autónomo. Corre 100% offline con modelos locales via Ollama.
 
 ---
 
 ## Stack
 
 | Capa | Tecnología |
-|------|-----------|
-| Frontend | React 18 · Vite · Tailwind CSS · glassmorphism UI |
-| Backend | ASP.NET Core 8 Web API · C# |
-| LLM | Ollama — cualquier modelo instalado (default: `qwen3:1.7b`) |
-| Embeddings | `nomic-embed-text` vía Ollama |
-| Vector DB | ChromaDB (servidor local Python) |
+|---|---|
+| Frontend | React 18 · Vite · Tailwind CSS (glassmorphism) |
+| Backend | ASP.NET Core 8 · C# |
+| LLM | Ollama — cualquier modelo instalado (default: `qwen3:4b`) |
+| Embeddings | `nomic-embed-text` via Ollama |
+| Vector DB | ChromaDB (servidor local) |
 | Keyword search | SQLite FTS5 (BM25) |
-| Chat history | SQLite · EF Core |
-
----
-
-## Requisitos
-
-- [Ollama](https://ollama.com/download) para Windows
-- [.NET 8 SDK](https://dotnet.microsoft.com/download)
-- [Node.js 20+](https://nodejs.org/)
-- Python 3.11+ (para ChromaDB)
-
----
-
-## Setup
-
-### 1. Modelos LLM
-
-```bash
-# Modelo base (rápido, 1.7B)
-ollama pull qwen3:1.7b
-
-# Modelo de embeddings (requerido)
-ollama pull nomic-embed-text
-
-# Opcional: modelo especializado en ciberseguridad
-ollama pull hf.co/WhiteRabbitNeo/WhiteRabbitNeo-2.5-Qwen-2.5-Coder-7B-Q4_K_M-GGUF
-```
-
-### 2. ChromaDB
-
-```bash
-pip install chromadb
-chroma run --host localhost --port 8000
-```
-
-### 3. Backend
-
-```bash
-cd backend
-dotnet run
-# API en http://localhost:5000
-```
-
-### 4. Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-# UI en http://localhost:3000
-```
-
-### 5. Indexar conocimiento
-
-Con el backend y ChromaDB corriendo, llama una vez al endpoint de ingesta:
-
-```bash
-curl -X POST http://localhost:5000/api/ingest/folder
-```
-
-Esto indexa todos los archivos de `knowledge/` en ChromaDB **y** en SQLite FTS5.
-
----
-
-## Estructura
-
-```
-CyberGPT/
-├── frontend/
-│   └── src/
-│       ├── components/
-│       │   ├── ChatMessage.jsx    # Markdown, cursor streaming, panel de fuentes RAG
-│       │   ├── ChatInput.jsx      # Input + chips de filtro por categoría
-│       │   ├── Sidebar.jsx        # Historial de sesiones + prompts rápidos
-│       │   └── ModelPicker.jsx    # Selector de modelo Ollama en tiempo real
-│       ├── services/api.js        # fetch REST + SSE streaming
-│       └── App.jsx
-├── backend/
-│   ├── Controllers/
-│   │   ├── ChatController.cs      # POST /api/chat  +  POST /api/chat/stream (SSE)
-│   │   ├── SessionsController.cs  # CRUD de conversaciones
-│   │   ├── ModelsController.cs    # GET /api/models (proxy de Ollama /api/tags)
-│   │   ├── IngestController.cs    # POST /api/ingest/folder|file
-│   │   └── DocumentsController.cs
-│   ├── Services/
-│   │   ├── OllamaService.cs       # GenerateAsync, StreamAsync, RewriteQueryAsync
-│   │   ├── RagService.cs          # Hybrid search + RRF fusion
-│   │   ├── ChromaService.cs       # Vector search + filtro por categoría
-│   │   ├── KeywordSearchService.cs# SQLite FTS5 (BM25)
-│   │   ├── EmbeddingService.cs
-│   │   ├── SessionService.cs
-│   │   └── DocumentIngester.cs    # Chunking + escritura en Chroma y FTS5
-│   ├── Models/
-│   │   ├── ChatModels.cs          # ChatRequest, ChatResponse, SessionInfo
-│   │   └── SourceChunk.cs         # Content + FileName + Category
-│   └── Program.cs
-├── knowledge/                     # Tus documentos (no se suben a Git)
-│   ├── ATTACK/
-│   ├── Malware/
-│   ├── ActiveDirectory/
-│   ├── WindowsInternals/
-│   ├── DotNet/
-│   ├── OWASP/
-│   └── NotasPersonales/
-├── Prompts/
-│   └── cybergpt.txt               # System prompt especializado
-└── appsettings.json
-```
-
----
-
-## Flujo RAG
-
-```
-Pregunta
-  │
-  ▼
-RewriteQueryAsync()          ← LLM reformula la pregunta para mejor recall
-  │
-  ├─► ChromaDB.QueryAsync()  ← búsqueda semántica (coseno)    ─┐
-  │                                                              ├─► RRF fusion
-  └─► SQLite FTS5.Search()   ← búsqueda de palabras clave BM25 ─┘
-                                                                 │
-                                                                 ▼
-                                                          Top-5 SourceChunks
-                                                                 │
-                                                                 ▼
-                                                     OllamaService.StreamAsync()
-                                                                 │
-                                                                 ▼
-                                                     SSE token-by-token → UI
-```
-
-**Reciprocal Rank Fusion (k=60):** los documentos que aparecen en ambas listas (semántica + keyword) obtienen score mayor, mejorando la precisión final sin re-entrenamiento.
+| Historial | SQLite · EF Core |
+| Resiliencia | Polly — retry + circuit breaker |
 
 ---
 
 ## Características
 
-### Interfaz
+### Chat RAG
+- **Búsqueda híbrida** — ChromaDB (semántico coseno) + SQLite FTS5 (BM25) fusionados con RRF (k=60)
+- **Query rewriting** — el LLM reformula la pregunta antes de buscar para mejorar recall
+- **Historial de conversación** — 6 turnos de memoria por sesión (SQLite)
+- **Gestión de sesiones** — crear, cargar y eliminar conversaciones desde el sidebar
+- **Streaming SSE** — tokens en tiempo real via `POST /api/chat/stream`
+- **Panel de fuentes RAG** — cada respuesta muestra los chunks usados (fileName + categoría)
+- **Model picker** — cambia el modelo Ollama en runtime desde el header
+- **Filtro por categoría** — chips para MITRE ATT&CK, AD, Malware, OWASP, Windows, etc.
+- **Think toggle** — activa/desactiva el razonamiento interno de qwen3 (`think: true/false`)
+- **Stop button** — cancela la generación en mitad del stream (AbortController)
 
-- Respuestas en streaming token a token (SSE)
-- Panel de fuentes RAG colapsable por mensaje — muestra filename y categoría de cada fragmento usado
-- Historial de conversaciones: crear, cargar y eliminar sesiones desde el sidebar
-- Chips de filtro por categoría: Todo / MITRE / Active Directory / Malware / OWASP / Windows
-- Selector de modelo en tiempo real — lista los modelos instalados en Ollama, resalta automáticamente los especializados en ciberseguridad (WhiteRabbitNeo, HackerGPT, etc.)
+### Ingesta de documentos
+- Upload de PDF/TXT/MD desde el sidebar (drag & drop, hasta 50 MB)
+- `POST /api/documents/pdf` con override de fileName y categoría
+- Escribe en ChromaDB y SQLite FTS5 simultáneamente
+- Chunking con overlap: 1000 chars / 200 overlap
 
-### RAG
+### Agente OSINT autónomo
+Loop ReAct de hasta 12 iteraciones con 7 herramientas. Genera un reporte estructurado en español.
 
-- **Query rewriting** — reformulación automática de la pregunta antes de buscar
-- **Búsqueda híbrida** — semántica (Chroma) + keyword BM25 (SQLite FTS5) fusionadas con RRF
-- **Metadata filtering** — filtro por categoría/fuente en Chroma y FTS5
-- **Chunking con overlap** — 1000 chars / 200 overlap, soporta PDF, TXT, MD, CS, JSON, YAML
+| Herramienta | Qué investiga | API key |
+|---|---|---|
+| `whois_lookup` | WHOIS/RDAP para dominios e IPs | No (rdap.org) |
+| `dns_lookup` | A, AAAA, MX, NS, TXT, CNAME, SOA | No (Google DoH) |
+| `subdomain_discovery` | Subdominios via certificados TLS | No (crt.sh) |
+| `geoip_lookup` | Geolocalización, ISP, ASN | No (ip-api.com) |
+| `shodan_lookup` | Puertos abiertos, CVEs, banners | Opcional (sin key usa InternetDB gratis) |
+| `virustotal_lookup` | Reputación en 70+ motores AV | Sí — free 500 req/día |
+| `whatsapp_osint` | Estado, cuenta Business, dispositivos, privacidad | Sí — RapidAPI |
 
-### Modelos
+**Targets soportados:** dominio · IP · email · username · número de teléfono · hash de archivo
 
-- Cualquier modelo instalado en Ollama es seleccionable desde la UI sin reiniciar
-- `"think": false` aplicado automáticamente solo a modelos qwen3 (chain-of-thought desactivado para respuestas más rápidas)
-- El query rewriting siempre usa el modelo por defecto (rápido) independientemente del modelo seleccionado para la respuesta
+El reporte final incluye:
+- Resumen ejecutivo
+- Hallazgos técnicos (por herramienta)
+- Indicadores de riesgo
+- Conclusiones y recomendaciones
+
+### Infraestructura
+- **Health badge** — `GET /api/health` pingea Ollama y Chroma cada 30s con dots verde/rojo en el header
+- **Polly resilience** — retry exponencial (3 intentos, delay 2s) + circuit breaker en llamadas a Ollama y embeddings
+- **Deduplicación de tool calls** — el agente OSINT detecta y bloquea llamadas repetidas
+- **TOOL_UNAVAILABLE** — tools sin API key retornan señal explícita para que el agente las saltee sin reintentar
 
 ---
 
-## API
+## Requisitos
 
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| POST | `/api/chat` | Chat completo (respuesta JSON) |
-| POST | `/api/chat/stream` | Chat con streaming SSE |
-| GET | `/api/models` | Lista modelos instalados en Ollama |
-| GET | `/api/sessions` | Lista conversaciones recientes |
-| GET | `/api/sessions/{id}/messages` | Mensajes de una sesión |
-| DELETE | `/api/sessions/{id}` | Eliminar sesión |
-| POST | `/api/ingest/folder` | Indexar carpeta `knowledge/` |
-| POST | `/api/ingest/file` | Indexar un archivo específico |
-
-### Ejemplo: chat con streaming
+- [Ollama](https://ollama.com/download)
+- [.NET 8 SDK](https://dotnet.microsoft.com/download)
+- [Node.js 20+](https://nodejs.org)
+- ChromaDB (ver abajo)
 
 ```bash
-curl -N -X POST http://localhost:5000/api/chat/stream \
-  -H "Content-Type: application/json" \
-  -d '{"message":"Explica Kerberoasting","model":"qwen3:1.7b","category":"mitre"}'
+# ChromaDB via pip
+pip install chromadb
+chroma run --host localhost --port 8000
+
+# O via Docker
+docker run -p 8000:8000 chromadb/chroma
+
+# Modelos recomendados
+ollama pull qwen3:4b
+ollama pull nomic-embed-text
 ```
 
-Respuesta SSE:
-```
-data: {"sources":[{"fileName":"attack.pdf","category":"mitre","content":"..."}],"sessionId":"..."}
-data: {"token":"Kerberoasting"}
-data: {"token":" es una técnica..."}
-data: {"done":true}
+---
+
+## Instalación
+
+```bash
+git clone https://github.com/diegojojoayandun/CyberGPT.git
+cd CyberGPT
+
+# Backend
+cd backend
+dotnet restore
+dotnet run      # http://localhost:5000
+
+# Frontend (nueva terminal)
+cd frontend
+npm install
+npm run dev     # http://localhost:3000
 ```
 
 ---
@@ -217,16 +117,137 @@ data: {"done":true}
 {
   "Ollama": {
     "BaseUrl": "http://localhost:11434",
-    "Model": "qwen3:1.7b"
+    "Model": "qwen3:4b"
   },
   "Chroma": {
     "BaseUrl": "http://localhost:8000"
   },
   "Knowledge": {
     "Path": "../knowledge/{ATTACK,Malware,ActiveDirectory,WindowsInternals,DotNet,ReverseEngineering,OWASP,NotasPersonales}"
+  },
+  "Osint": {
+    "ShodanApiKey":     "",
+    "VirusTotalApiKey": "",
+    "RapidApiKey":      ""
   }
 }
 ```
+
+| Key | Dónde conseguirla | Plan gratuito |
+|---|---|---|
+| `ShodanApiKey` | [shodan.io](https://shodan.io) | Opcional — sin key usa InternetDB |
+| `VirusTotalApiKey` | [virustotal.com](https://virustotal.com) | 500 req/día |
+| `RapidApiKey` | [rapidapi.com → whatsapp-osint](https://rapidapi.com/inutil-inutil-default/api/whatsapp-osint) | Plan Basic |
+
+---
+
+## API
+
+### Chat
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/chat/stream` | Chat con RAG, streaming SSE |
+| `GET` | `/api/models` | Modelos instalados en Ollama |
+
+### Sesiones
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/sessions` | Listar sesiones |
+| `GET` | `/api/sessions/{id}/messages` | Mensajes de una sesión |
+| `DELETE` | `/api/sessions/{id}` | Eliminar sesión |
+
+### Documentos
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/documents/pdf` | Ingestar PDF/TXT/MD (multipart, 50 MB max) |
+
+### OSINT
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/osint/investigate` | Iniciar investigación OSINT (SSE streaming) |
+
+### Sistema
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/health` | Estado de Ollama y ChromaDB |
+
+### Ejemplo: chat streaming
+
+```bash
+curl -N -X POST http://localhost:5000/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Explica Kerberoasting","model":"qwen3:4b","category":"mitre"}'
+```
+
+### Ejemplo: OSINT
+
+```bash
+curl -N -X POST http://localhost:5000/api/osint/investigate \
+  -H "Content-Type: application/json" \
+  -d '{"target":"example.com","targetType":"domain"}'
+```
+
+---
+
+## Flujo RAG
+
+```
+Pregunta
+  │
+  ▼
+RewriteQueryAsync()          ← LLM reformula para mejor recall
+  │
+  ├─► ChromaDB.QueryAsync()  ← semántico (coseno)  ─┐
+  │                                                   ├─► RRF fusion (k=60)
+  └─► SQLite FTS5.Search()   ← keyword BM25         ─┘
+                                                      │
+                                                      ▼
+                                               Top-5 SourceChunks
+                                                      │
+                                                      ▼
+                                          OllamaService.StreamAsync()
+                                                      │
+                                                      ▼
+                                          SSE token-by-token → UI
+```
+
+## Flujo OSINT Agent
+
+```
+Target (dominio / IP / teléfono / hash)
+  │
+  ▼
+OsintAgentService — ReAct loop (max 12 iteraciones)
+  │
+  ├─► LLM decide qué tool usar
+  ├─► Tool ejecuta (WHOIS / DNS / Shodan / VT / WhatsApp / ...)
+  ├─► Resultado vuelve al contexto del LLM
+  └─► Repite hasta que el LLM escribe el reporte final
+  │
+  ▼
+SSE events → OsintTimeline (frontend)
+  { type: "tool_start" | "tool_done" | "thinking" | "report" | "done" }
+```
+
+---
+
+## Base de conocimiento
+
+Coloca documentos en `knowledge/` organizado por categorías:
+
+```
+knowledge/
+  ATTACK/              # MITRE ATT&CK
+  Malware/
+  ActiveDirectory/
+  WindowsInternals/
+  DotNet/
+  ReverseEngineering/
+  OWASP/
+  NotasPersonales/
+```
+
+O usa el panel de upload en el sidebar para ingestar en runtime.
 
 ---
 

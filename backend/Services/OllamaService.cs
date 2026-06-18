@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using CyberGPT.API.Models;
 
@@ -104,7 +105,7 @@ public class OllamaService : IOllamaService
 
     public async IAsyncEnumerable<string> StreamAsync(
         string prompt, string context = "", List<ChatTurn>? history = null,
-        string? model = null,
+        string? model = null, bool? enableThinking = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var resolvedModel = Resolve(model);
@@ -117,7 +118,7 @@ public class OllamaService : IOllamaService
             ["stream"]   = true
         };
         if (SupportsThinkParam(resolvedModel))
-            bodyDict["think"] = false;
+            bodyDict["think"] = enableThinking ?? false;
 
         var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/api/chat")
         {
@@ -187,5 +188,50 @@ public class OllamaService : IOllamaService
 
         if (!inThink && thinkBuf.Length > 0)
             yield return thinkBuf.ToString();
+    }
+
+    public async Task<(string Content, List<LlmToolCall> ToolCalls)> ChatWithToolsAsync(
+        List<object> messages,
+        List<object> tools,
+        string? model = null,
+        CancellationToken ct = default)
+    {
+        var resolvedModel = Resolve(model);
+
+        var bodyDict = new Dictionary<string, object>
+        {
+            ["model"]    = resolvedModel,
+            ["messages"] = messages,
+            ["tools"]    = tools,
+            ["stream"]   = false
+        };
+        if (SupportsThinkParam(resolvedModel))
+            bodyDict["think"] = false;
+
+        var res = await _http.PostAsync(
+            $"{_baseUrl}/api/chat",
+            new StringContent(JsonSerializer.Serialize(bodyDict), Encoding.UTF8, "application/json"),
+            ct);
+        res.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
+        var msg = doc.RootElement.GetProperty("message");
+
+        var content = StripThinkingTags(
+            msg.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "");
+
+        var toolCalls = new List<LlmToolCall>();
+        if (msg.TryGetProperty("tool_calls", out var tcs) && tcs.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var tc in tcs.EnumerateArray())
+            {
+                var fn   = tc.GetProperty("function");
+                var name = fn.GetProperty("name").GetString() ?? "";
+                var args = fn.TryGetProperty("arguments", out var a) ? a.Clone() : default;
+                toolCalls.Add(new LlmToolCall(name, args));
+            }
+        }
+
+        return (content, toolCalls);
     }
 }

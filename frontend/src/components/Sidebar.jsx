@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { uploadPdf } from '../services/api'
 
 const QUICK_PROMPTS = [
   'Explica Kerberoasting y cómo detectarlo en logs',
@@ -19,7 +20,87 @@ function formatDate(isoString) {
   return d.toLocaleDateString([], { day: '2-digit', month: 'short' })
 }
 
-export default function Sidebar({ sessions, activeSessionId, onSelect, onNewSession, onLoadSession, onDeleteSession }) {
+const UPLOAD_CATEGORIES = ['general', 'mitre', 'ad', 'malware', 'owasp', 'windows']
+
+function PdfUploadZone() {
+  const [dragging, setDragging] = useState(false)
+  const [status, setStatus] = useState(null) // null | 'uploading' | 'done' | 'error'
+  const [category, setCategory] = useState('general')
+  const [expanded, setExpanded] = useState(false)
+  const inputRef = useRef(null)
+
+  const handleFiles = async (files) => {
+    const file = files[0]
+    if (!file) return
+    setStatus('uploading')
+    try {
+      await uploadPdf(file, category)
+      setStatus('done')
+      setTimeout(() => setStatus(null), 3000)
+    } catch {
+      setStatus('error')
+      setTimeout(() => setStatus(null), 3000)
+    }
+  }
+
+  const onDrop = (e) => {
+    e.preventDefault()
+    setDragging(false)
+    handleFiles(e.dataTransfer.files)
+  }
+
+  return (
+    <div className="px-4 pt-3">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full text-xs text-gray-500 hover:text-gray-400 flex items-center gap-1 mb-2 transition-colors"
+      >
+        <span>{expanded ? '▾' : '▸'}</span>
+        <span className="uppercase tracking-widest">Subir documento</span>
+      </button>
+      {expanded && (
+        <div className="space-y-2 pb-2">
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value)}
+            className="w-full text-[11px] bg-white/5 border border-white/10 rounded-lg px-2 py-1.5
+                       text-gray-400 focus:outline-none focus:border-cyber-accent/30"
+          >
+            {UPLOAD_CATEGORIES.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <div
+            onDragOver={e => { e.preventDefault(); setDragging(true) }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            onClick={() => inputRef.current?.click()}
+            className={`border-2 border-dashed rounded-lg px-3 py-4 text-center cursor-pointer
+                        transition-all duration-200 text-[11px]
+                        ${dragging
+                          ? 'border-cyber-accent/60 bg-cyber-accent/10 text-cyber-accent'
+                          : 'border-white/10 text-gray-600 hover:border-white/20 hover:text-gray-500'
+                        }`}
+          >
+            {status === 'uploading' && <span className="text-cyber-accent animate-pulse">Indexando…</span>}
+            {status === 'done'      && <span className="text-green-400">✓ Indexado</span>}
+            {status === 'error'     && <span className="text-red-400">✕ Error al subir</span>}
+            {!status && <span>Arrastra PDF/TXT/MD<br />o haz clic</span>}
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".pdf,.txt,.md"
+            className="hidden"
+            onChange={e => handleFiles(e.target.files)}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Sidebar({ sessions, activeSessionId, onSelect, onNewSession, onLoadSession, onDeleteSession, loading, mode, onModeChange }) {
   const [hoveredId, setHoveredId] = useState(null)
 
   return (
@@ -32,8 +113,31 @@ export default function Sidebar({ sessions, activeSessionId, onSelect, onNewSess
         <p className="text-xs text-gray-500 mt-1 tracking-widest uppercase">RAG · Ciberseguridad</p>
       </div>
 
-      {/* Nueva sesión */}
-      <div className="px-4 pt-4">
+      {/* Mode switcher */}
+      <div className="px-4 pt-4 flex gap-2">
+        <button
+          onClick={() => onModeChange('chat')}
+          className={`flex-1 text-xs rounded-lg px-3 py-2 transition-all duration-150
+            ${mode === 'chat'
+              ? 'glass-accent text-cyber-accent border border-cyber-accent/30'
+              : 'glass text-gray-500 border border-white/10 hover:text-gray-400'}`}
+        >
+          💬 Chat
+        </button>
+        <button
+          onClick={() => onModeChange('osint')}
+          className={`flex-1 text-xs rounded-lg px-3 py-2 transition-all duration-150
+            ${mode === 'osint'
+              ? 'glass-accent text-cyber-accent border border-cyber-accent/30'
+              : 'glass text-gray-500 border border-white/10 hover:text-gray-400'}`}
+        >
+          🕵️ OSINT
+        </button>
+      </div>
+
+      {/* Nueva sesión (solo en modo chat) */}
+      {mode === 'chat' && (
+      <div className="px-4 pt-3">
         <button
           onClick={onNewSession}
           className="w-full text-xs glass rounded-lg px-3 py-2.5 text-left
@@ -45,9 +149,19 @@ export default function Sidebar({ sessions, activeSessionId, onSelect, onNewSess
           <span>Nueva conversación</span>
         </button>
       </div>
+      )}
 
-      {/* Conversaciones recientes */}
+      {mode === 'chat' && <PdfUploadZone />}
+
+      {/* Conversaciones recientes + Quick prompts (solo chat) */}
       <div className="px-4 pt-4 flex-1 overflow-y-auto">
+      {mode === 'osint' && (
+        <div className="text-center py-8 text-gray-700 text-xs space-y-1">
+          <p>Modo OSINT activo.</p>
+          <p>Ingresa un target en el panel principal.</p>
+        </div>
+      )}
+      {mode === 'chat' && <>
         {sessions.length > 0 && (
           <>
             <p className="text-xs text-gray-600 uppercase tracking-widest mb-2">Recientes</p>
@@ -97,15 +211,19 @@ export default function Sidebar({ sessions, activeSessionId, onSelect, onNewSess
             <button
               key={i}
               onClick={() => onSelect(p)}
-              className="text-left text-xs text-gray-400 hover:text-cyber-accent
-                         glass rounded-lg px-3 py-2.5
-                         hover:border-cyber-accent/30 hover:bg-cyber-accent/5
-                         transition-all duration-200 hover:shadow-[0_0_12px_rgba(34,211,238,0.1)]"
+              disabled={loading}
+              className={`text-left text-xs glass rounded-lg px-3 py-2.5
+                         transition-all duration-200
+                         ${loading
+                           ? 'text-gray-600 cursor-not-allowed opacity-50'
+                           : 'text-gray-400 hover:text-cyber-accent hover:border-cyber-accent/30 hover:bg-cyber-accent/5 hover:shadow-[0_0_12px_rgba(34,211,238,0.1)]'
+                         }`}
             >
               {p}
             </button>
           ))}
         </div>
+        </>}
       </div>
 
       <div className="p-4 border-t border-white/5">

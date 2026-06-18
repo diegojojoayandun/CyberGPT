@@ -9,7 +9,7 @@ const CATEGORIES = [
   { id: 'windows', label: 'Windows' },
 ]
 
-export default function ChatInput({ onSend, disabled, onCategoryChange }) {
+export default function ChatInput({ onSend, onStop, disabled, onCategoryChange, enableThinking, onToggleThinking }) {
   const [value, setValue] = useState('')
   const [activeCategory, setActiveCategory] = useState(null)
 
@@ -27,8 +27,8 @@ export default function ChatInput({ onSend, disabled, onCategoryChange }) {
 
   return (
     <div className="glass border-t border-white/5">
-      {/* Category filter chips */}
-      <div className="px-4 pt-3 flex gap-2 flex-wrap">
+      {/* Category filter chips + think toggle */}
+      <div className="px-4 pt-3 flex gap-2 flex-wrap items-center">
         {CATEGORIES.map(cat => (
           <button
             key={String(cat.id)}
@@ -42,6 +42,21 @@ export default function ChatInput({ onSend, disabled, onCategoryChange }) {
             {cat.label}
           </button>
         ))}
+        <div className="ml-auto">
+          <button
+            type="button"
+            onClick={onToggleThinking}
+            title={enableThinking ? 'Desactivar pensamiento extendido' : 'Activar pensamiento extendido'}
+            className={`text-[11px] px-2.5 py-1 rounded-full border transition-all duration-150 flex items-center gap-1
+              ${enableThinking
+                ? 'border-purple-400/60 bg-purple-400/15 text-purple-300'
+                : 'border-white/10 text-gray-500 hover:border-white/20 hover:text-gray-400'
+              }`}
+          >
+            <span>{enableThinking ? '🧠' : '💡'}</span>
+            <span>Pensar</span>
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="flex gap-2 p-4">
@@ -57,16 +72,28 @@ export default function ChatInput({ onSend, disabled, onCategoryChange }) {
                      disabled:opacity-50 transition-all duration-200
                      backdrop-blur-[3px]"
         />
-        <button
-          type="submit"
-          disabled={disabled || !value.trim()}
-          className="px-5 py-3 glass-accent text-cyber-accent rounded-xl text-sm font-medium
-                     hover:bg-cyber-accent/15 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)]
-                     disabled:opacity-30 disabled:cursor-not-allowed
-                     transition-all duration-200 active:scale-95"
-        >
-          Enviar
-        </button>
+        {disabled ? (
+          <button
+            type="button"
+            onClick={onStop}
+            className="px-5 py-3 border border-red-400/40 bg-red-400/10 text-red-400 rounded-xl text-sm font-medium
+                       hover:bg-red-400/20 hover:shadow-[0_0_20px_rgba(248,113,113,0.2)]
+                       transition-all duration-200 active:scale-95"
+          >
+            Detener
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!value.trim()}
+            className="px-5 py-3 glass-accent text-cyber-accent rounded-xl text-sm font-medium
+                       hover:bg-cyber-accent/15 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)]
+                       disabled:opacity-30 disabled:cursor-not-allowed
+                       transition-all duration-200 active:scale-95"
+          >
+            Enviar
+          </button>
+        )}
       </form>
     </div>
   )

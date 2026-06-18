@@ -113,7 +113,7 @@ public class ChromaService : IChromaService
             new StringContent(JsonSerializer.Serialize(bodyDict), Encoding.UTF8, "application/json"));
 
         if (!res.IsSuccessStatusCode) return [];
-
+http://localhost:3000/
         using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
         var root = doc.RootElement;
 

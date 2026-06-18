@@ -30,13 +30,13 @@ public class DocumentIngester(IChromaService chroma, KeywordSearchService keywor
         logger.LogInformation("Indexación completada.");
     }
 
-    public async Task IngestFileAsync(string filePath)
+    public async Task IngestFileAsync(string filePath, string? overrideFileName = null, string? overrideCategory = null)
     {
         try
         {
             var content = await ReadContentAsync(filePath);
-            var category = Path.GetFileName(Path.GetDirectoryName(filePath)) ?? "general";
-            var fileName = Path.GetFileName(filePath);
+            var category = overrideCategory ?? Path.GetFileName(Path.GetDirectoryName(filePath)) ?? "general";
+            var fileName = overrideFileName ?? Path.GetFileName(filePath);
 
             var chunks = ChunkText(content);
             logger.LogInformation("Indexando {File} → {Chunks} chunks", fileName, chunks.Count);
